@@ -316,8 +316,11 @@ class RecompressLogic(object):
 
     def _recompress(self, arc):
         source_file = arc.get_path()
-        output_file = os.path.join(
-            self._params.temp_dir, os.path.basename(source_file))
+        if self._params.replace_originals:
+            output_file = source_file + '.tmp'
+        else:
+            output_file = os.path.join(
+                self._params.temp_dir, os.path.basename(source_file))
         content = arc.extract(self._params.temp_dir)
         if os.path.isfile(output_file):
             os.remove(output_file)
