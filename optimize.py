@@ -144,6 +144,22 @@ class ArchivedFile(object):
         return self._attributes.startswith('D')
 
 
+class Block(object):
+    def __init__(self):
+        self._size = DataSize()
+        self._files = 0
+
+    def add_file(self, file):
+        self._size += file.get_packed_size()
+        self._files += 1
+
+    def is_singlefile(self):
+        return self._files == 1
+
+    def get_size(self):
+        return self._size
+
+
 class Archive(object):
     def __init__(self, path):
         self._path = path
@@ -178,11 +194,11 @@ class Archive(object):
             [x.get_packed_size() for x in self._files.values()], DataSize())
 
     @lru_cache(maxsize=None)
-    def get_blocks_sizes(self):
-        blocks = [DataSize() for i in range(self._blocks)]
+    def get_blocks(self):
+        blocks = [Block() for i in range(self._blocks)]
         for f in self._files.values():
             if f._block is not None:
-                blocks[f._block] += f.get_packed_size()
+                blocks[f._block].add_file(f)
         return blocks
 
     def get_ratio(self):
@@ -199,7 +215,7 @@ class Archive(object):
     def get_info(self):
         if self._solid:
             solid_attrs = 'Solid ' + Archive._get_sizes_info(
-                'block', self.get_blocks_sizes())
+                'block', [block.get_size() for block in self.get_blocks()])
         else:
             solid_attrs = ''
         return solid_attrs + '{} {:.2f}% ({}->{})'.format(
@@ -209,7 +225,7 @@ class Archive(object):
     def get_files_info(self):
         types = self.get_files_types()
         return (Archive._get_sizes_info('file', self._get_files_sizes())
-            + '[' + ','.join(sorted(types)) + ']')
+                + '[' + ','.join(sorted(types)) + ']')
 
     @staticmethod
     def _get_sizes_info(type, sizes):
@@ -316,8 +332,11 @@ class RecompressLogic(object):
         return self._is_big_solid(arc)
 
     def _is_big_solid(self, arc):
-        return (arc.is_solid() and (max(arc.get_blocks_sizes()) >=
-                self._params.max_solid_block_size))
+        if not arc.is_solid():
+            return False
+        blocks = [b for b in arc.get_blocks() if not b.is_singlefile()]
+        max_block_size = max([block.get_size() for block in blocks])
+        return max_block_size >= self._params.max_solid_block_size
 
     def _recompress(self, arc):
         source_file = arc.get_path()
