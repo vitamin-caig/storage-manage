@@ -208,8 +208,8 @@ class Archive(object):
 
     def get_files_info(self):
         types = self.get_files_types()
-        return Archive._get_sizes_info('file', self._get_files_sizes())
-        + 'types [{}]'.format(','.join(sorted(types)))
+        return (Archive._get_sizes_info('file', self._get_files_sizes())
+            + '[' + ','.join(sorted(types)) + ']')
 
     @staticmethod
     def _get_sizes_info(type, sizes):
@@ -229,8 +229,13 @@ class Archive(object):
     def extract(self, out_dir):
         result_dir = os.path.join(out_dir, str(hash(self._path)))
         os.makedirs(result_dir)
-        Archive._execute('7zr x "-o{}" "{}"'.format(result_dir, self._path))
-        return result_dir
+        try:
+            Archive._execute(
+                '7zr x "-o{}" "{}"'.format(result_dir, self._path))
+            return result_dir
+        except Exception:
+            shutil.rmtree(result_dir)
+            raise
 
     @staticmethod
     def compress(input_dir, output_file, level, max_solid_block_size):
@@ -322,12 +327,18 @@ class RecompressLogic(object):
             output_file = os.path.join(
                 self._params.temp_dir, os.path.basename(source_file))
         content = arc.extract(self._params.temp_dir)
-        if os.path.isfile(output_file):
-            os.remove(output_file)
-        packed = Archive.compress(
-            content, output_file, self._get_compression_level(arc),
-            self._params.max_solid_block_size)
-        shutil.rmtree(content)
+        try:
+            if os.path.isfile(output_file):
+                os.remove(output_file)
+            packed = Archive.compress(
+                content, output_file, self._get_compression_level(arc),
+                self._params.max_solid_block_size)
+        except Exception:
+            if os.path.isfile(output_file):
+                os.remove(output_file)
+            raise
+        finally:
+            shutil.rmtree(content)
         if self._params.replace_originals:
             os.replace(output_file, source_file)
         elif not self._params.keep_dry_run_result:
