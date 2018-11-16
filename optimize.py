@@ -340,11 +340,11 @@ class RecompressLogic(object):
 
     def _recompress(self, arc):
         source_file = arc.get_path()
-        if self._params.replace_originals:
-            output_file = source_file + '.tmp'
-        else:
+        if self._params.dry_run:
             output_file = os.path.join(
                 self._params.temp_dir, os.path.basename(source_file))
+        else:
+            output_file = source_file + '.tmp'
         content = arc.extract(self._params.temp_dir)
         try:
             if os.path.isfile(output_file):
@@ -358,7 +358,7 @@ class RecompressLogic(object):
             raise
         finally:
             shutil.rmtree(content)
-        if self._params.replace_originals:
+        if not self._params.dry_run:
             os.replace(output_file, source_file)
         elif not self._params.keep_dry_run_result:
             os.remove(output_file)
@@ -392,8 +392,8 @@ def parse_cmdline():
     parser.add_argument('--temp-dir',
                         help='Temporary directory to use', type=str,
                         default='temp')
-    parser.add_argument('--replace-originals',
-                        help='Replace originals, dry run if not specified',
+    parser.add_argument('--dry-run',
+                        help='Do nothing but source analysis',
                         action='store_true')
     parser.add_argument('--keep-dry-run-result',
                         help='Do not remove result of dry-run in temp dir',
