@@ -242,27 +242,35 @@ class Archive(object):
     def _get_files_sizes(self):
         return [x.get_unpacked_size() for x in self._files.values()]
 
-    def extract(self, out_dir):
+    def extract(self, out_dir, timeout=3600):
         result_dir = os.path.join(out_dir, str(hash(self._path)))
         os.makedirs(result_dir)
         try:
             Archive._execute(
-                '7zr x "-o{}" "{}"'.format(result_dir, self._path))
+                '7zr x "-o{}" "{}"'.format(result_dir, self._path),
+                timeout=timeout)
             return result_dir
         except Exception:
             shutil.rmtree(result_dir)
             raise
 
     @staticmethod
-    def compress(input_dir, output_file, level, max_solid_block_size):
+    def compress(input_dir, output_file, level=0, solid_block_size=None,
+                 remove_sources=False, timeout=3600):
         output_path = os.path.abspath(output_file)
+        switches = '-myx=9 -mmt=on '
+        switches += '-mx={} '.format(level)
         if level == 0:
-            solid_params = 'off'
+            switches += '-ms=off '
         else:
-            solid_params = 'e{}b'.format(int(max_solid_block_size))
-        Archive._execute(
-            '7zr a -t7z -mx={} -myx=9 -ms={} -mmt=on "{}" .'.format(
-                level, solid_params, output_path), cwd=input_dir)
+            if solid_block_size:
+                switches += '-ms=e{}b '.format(int(solid_block_size))
+            else:
+                switches += '-ms=e '
+        if remove_sources:
+            switches += '-sdel '
+        Archive._execute('7zr a -t7z {} "{}"'.format(switches, output_path),
+                         cwd=input_dir, timeout=timeout)
         return Archive(output_file)
 
     @staticmethod
@@ -280,7 +288,7 @@ class Archive(object):
     @staticmethod
     def _execute(cmdline, **kwargs):
         (output, status) = pexpect.run(
-            cmdline, encoding='utf-8', timeout=600, withexitstatus=True,
+            cmdline, encoding='utf-8', withexitstatus=True,
             **kwargs)
         if status != 0:
             raise RuntimeError(
@@ -322,7 +330,7 @@ class RecompressLogic(object):
             if files_info != after_files:
                 raise RuntimeError('Files mismatch: ' + after_files)
             delta = after.get_packed_size() - arc.get_packed_size()
-            print(' {}\n    d={}'.format(after.get_info(), delta))
+            print(' {}\n  d={}'.format(after.get_info(), delta))
             return delta
         else:
             print(' unchanged')
@@ -345,13 +353,16 @@ class RecompressLogic(object):
                 self._params.temp_dir, os.path.basename(source_file))
         else:
             output_file = source_file + '.tmp'
-        content = arc.extract(self._params.temp_dir)
+        content = arc.extract(
+            self._params.temp_dir, timeout=self._params.timeout)
         try:
             if os.path.isfile(output_file):
                 os.remove(output_file)
             packed = Archive.compress(
-                content, output_file, self._get_compression_level(arc),
-                self._params.max_solid_block_size)
+                content, output_file,
+                level=self._get_compression_level(arc), remove_sources=True,
+                solid_block_size=self._params.max_solid_block_size,
+                timeout=self._params.timeout)
         except Exception:
             if os.path.isfile(output_file):
                 os.remove(output_file)
@@ -398,6 +409,8 @@ def parse_cmdline():
     parser.add_argument('--keep-dry-run-result',
                         help='Do not remove result of dry-run in temp dir',
                         action='store_true')
+    parser.add_argument('--timeout',
+                        help='7z binary call timeout', type=int, default=3600)
     parser.add_argument('paths',
                         help='Files and folders to process', metavar='path',
                         type=str, nargs='+',)
