@@ -6,6 +6,7 @@ import sys
 import pexpect
 from functools import lru_cache
 from argparse import ArgumentParser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 '''
 --
@@ -314,25 +315,28 @@ class RecompressLogic(object):
 
     def recompress(self, archives):
         total_delta = DataSize()
-        for arc in archives:
-            try:
-                total_delta += self._process(arc)
-            except RuntimeError as e:
-                print(e)
+        with ThreadPoolExecutor(max_workers=self._params.jobs) as executor:
+            futures = [executor.submit(RecompressLogic._process, self, arc) for arc in archives]
+            for f in concurrent.features.as_completed(futures):
+                try:
+                    total_delta += f.result()
+                except Exception as e:
+                    print(e)
         print('Total: d={}'.format(total_delta))
 
     def _process(self, arc):
         files_info = arc.get_files_info()
-        print(arc.get_path() + '\n ' + arc.get_info() + ' ' + files_info)
         if self._need_recompress(arc):
             after = self._recompress(arc)
             after_files = after.get_files_info()
             if files_info != after_files:
                 raise RuntimeError('Files mismatch: ' + after_files)
             delta = after.get_packed_size() - arc.get_packed_size()
+            print(arc.get_path() + '\n ' + arc.get_info() + ' ' + files_info)
             print(' {}\n  d={}'.format(after.get_info(), delta))
             return delta
         else:
+            print(arc.get_path() + '\n ' + arc.get_info() + ' ' + files_info)
             print(' unchanged')
             return DataSize()
 
@@ -411,6 +415,9 @@ def parse_cmdline():
                         action='store_true')
     parser.add_argument('--timeout',
                         help='7z binary call timeout', type=int, default=3600)
+    parser.add_argument('--jobs',
+                        help='Parallel processing jobs count', type=int,
+                        default=1)
     parser.add_argument('paths',
                         help='Files and folders to process', metavar='path',
                         type=str, nargs='+',)
