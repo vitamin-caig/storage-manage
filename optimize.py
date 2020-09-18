@@ -121,6 +121,7 @@ class Fs(object):
 class ArchivedFile(object):
     def __init__(self, path):
         self._path = path
+        self._attributes = ''
 
     def _set_property(self, name, value):
         if name == 'Size':
@@ -317,7 +318,7 @@ class RecompressLogic(object):
         total_delta = DataSize()
         with ThreadPoolExecutor(max_workers=self._params.jobs) as executor:
             futures = [executor.submit(RecompressLogic._process, self, arc) for arc in archives]
-            for f in concurrent.features.as_completed(futures):
+            for f in as_completed(futures):
                 try:
                     total_delta += f.result()
                 except Exception as e:
